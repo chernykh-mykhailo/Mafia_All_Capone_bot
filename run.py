@@ -22,7 +22,8 @@ class TelegramBot:
             BotCommand(command="start", description="Запуск бота 🤖"),
             BotCommand(command="help", description="Допомога 🆘"),
             BotCommand(command="play", description="Почати гру 🎮"),
-            BotCommand(command="buy", description="Купити Підписку"),
+            BotCommand(command="buy_subscription", description="Купити/Продовжити Підписку"),
+            BotCommand(command="stop_subscription", description="Призупинити підписку"),
             BotCommand(command="leave_game", description="Покинути гру"),
             BotCommand(command="construct_event", description="Конструктор івентів")
         ]    

@@ -12,13 +12,16 @@ class PlayCommand:
     def __init__(self):
         self.router_play = Router()
 
-        self.router_play.message.register(self.start_cmd, Command("play"))
+        self.router_play.message.register(self.play_cmd, Command("play"))
         self.router_play.message.register(self.start_cmd_link, CommandStart(deep_link=True))
         self.router_play.message.register(self.leave_game_cmd, Command("leave_game"))
 
         self.router_play.callback_query.register(self.yes_btn, F.data == "answer_1")
         self.router_play.callback_query.register(self.no_btn, F.data == "answer_2")
         self.router_play.message.register(self.last_message, lambda message: self.is_last_message)
+
+        self.router_play.callback_query.register(self.like_def, F.data == "like")
+        self.router_play.callback_query.register(self.dislike_def, F.data == "dislike")
 
         self.chat_id = 0
 
@@ -33,12 +36,15 @@ class PlayCommand:
         self.messageOfRegistration = None
         self.choose_who_you_will_cured = None
         self.choose_who_you_will_kill = None
+        self.message_about_voiting = None
 
         self.numbers_of_members = 2
 
         self.list_of_victim = []
         self.list_of_patient = []
         self.list_of_candidates = []
+
+        self.list_of_all_voites = []
 
         self.question_and_two_answers = []
 
@@ -50,6 +56,9 @@ class PlayCommand:
         self.is_last_message = False
         self.message_for_civilian = None
         self.is_killed = 0
+
+        self.like = 0
+        self.dislike = 0
 
 
     async def night_function(self, message: Message, bot: Bot):
@@ -68,7 +77,6 @@ class PlayCommand:
 
         if creator_id is not None:
             cursor.execute("SELECT doctor, doctor_text, all_capone, all_capone_text, civilian, civilian_text FROM admin_panel WHERE creator_id = %s AND group_id = %s", (creator_id, message.chat.id))
-
             result = cursor.fetchone()
             if result:
                 self.name_of_doctor = result[0]
@@ -76,7 +84,7 @@ class PlayCommand:
                 self.name_of_all_capone = result[2]
                 self.description_of_all_capone = result[3]
                 self.name_of_civilian = result[4]
-                self.description_of_civilian = result[5]
+                self.description_of_civilian = result[5] 
             else:
                 self.name_of_doctor = self.description_of_doctor = self.name_of_all_capone = self.description_of_all_capone = self.name_of_civilian = self.description_of_civilian = None
 
@@ -88,8 +96,11 @@ class PlayCommand:
                 cursor.execute("UPDATE users SET cured = %s WHERE id = %s", (0, id,))
                 conn.commit()
 
-                roles = [self.name_of_doctor, self.name_of_civilian, self.name_of_all_capone]
-                # roles = [self.name_of_civilian]
+                cursor.execute("UPDATE users SET voites = %s WHERE id = %s", (0, id,))
+                conn.commit()
+
+                #roles = [self.name_of_doctor, self.name_of_civilian, self.name_of_all_capone]
+                roles = [self.name_of_civilian, self.name_of_all_capone]
                 randomRole = random.choice(roles)
                 
                 cursor.execute("UPDATE users SET role = %s WHERE id = %s", (randomRole, id))
@@ -172,7 +183,10 @@ class PlayCommand:
                 cursor.execute(f"SELECT tg_name FROM users WHERE id = %s", (self.victim_id,))
                 name = cursor.fetchone()[0]
 
-                self.victim_text = f"{self.name_of_all_capone} {name}"
+                cursor.execute(f"SELECT role FROM users WHERE id = %s", (self.victim_id,))
+                role = cursor.fetchone()[0]
+
+                self.victim_text = f"{role} {name}"
 
                 await bot.send_message(chat_id=id, text="Тебе вбили! Напиши своє останнє повідолмення!")
                 self.is_last_message = True
@@ -195,8 +209,19 @@ class PlayCommand:
 
         await message.answer(f'Список гравців:\n{players_text}\n\nКількість гравців: {len(self.membersList)}\n\n<b>До голосування лишається 45 секунд!</b>', parse_mode="html")
 
-        await asyncio.sleep(45)
-        await self.voiting_function(message=message, bot=bot)
+        if len(self.membersList) == 1:
+            for id in self.membersList:
+                cursor.execute(f"SELECT role FROM users WHERE id = %s", (id,))
+                role = cursor.fetchone()[0]
+                if role == self.name_of_all_capone:
+                    await message.answer("Гра закінчена перемога Аль Капоне")
+                else:
+                    await message.answer("Гра закінчена перемога мирних")
+        elif len(self.membersList) >= 2:
+            await asyncio.sleep(45)
+            await self.voiting_function(message=message, bot=bot)
+            await asyncio.sleep(45)
+            await self.results_def(message=message, bot=bot)
 
 
     async def voiting_function(self, message: Message, bot: Bot):
@@ -220,23 +245,67 @@ class PlayCommand:
 
     def chosen_candidate_def(self, candidate_id):
         async def handler(callback: CallbackQuery, bot: Bot):
-            mess = self.message_list_of_candidates
-
             cursor.execute(f"SELECT tg_name FROM users WHERE id = %s", (candidate_id,))
             candidate_name = cursor.fetchone()[0]
 
-            await bot.edit_message_text(chat_id=callback.from_user.id, message_id=mess.message_id, text=f"Обери за кого ти проголосуєш:\nТи вибрав: {candidate_name}")
+            await self.message_list_of_candidates.edit_text(text=f"Обери за кого ти проголосуєш:\nТи вибрав: {candidate_name}")
 
             cursor.execute("SELECT tg_name FROM users WHERE id = %s", (callback.from_user.id,))
             member_name = cursor.fetchone()[0]
             await bot.send_message(chat_id=self.chat_id, text=f"{member_name} проголосував за {candidate_name}")
             
-            for i, (id, votes) in enumerate(self.list_of_candidates):
-                if id == self.list_of_candidates[i][0]:
-                    self.list_of_candidates[i][1] + 1
-                    print(self.list_of_candidates[i])
+            cursor.execute("SELECT voites FROM users WHERE id = %s", (candidate_id,))
+            voites = cursor.fetchone()
+
+            cursor.execute("UPDATE users SET voites = %s WHERE id = %s", (voites + 1, candidate_id,))
+            conn.commit()
 
         return handler
+
+
+    async def results_def(self, message: Message, bot: Bot):
+        for id in self.membersList:
+            cursor.execute("SELECT voites FROM users WHERE id = %s", (id,))
+            voites = cursor.fetchone()
+
+            self.list_of_all_voites.append((id, voites))
+
+        self.list_of_all_voites.sort(key=lambda x: x[1], reverse=True)
+
+        candidate = self.list_of_all_voites[0]
+
+        cursor.execute("SELECT name FROM users WHERE id = %s", (candidate[0],))
+        name_of_candidate = cursor.fetchone()
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"👍 {self.like}", callback_data="like")],
+            [InlineKeyboardButton(text=f"👎 {self.dislike}", callback_data="dislike")]
+        ])
+
+        self.message_about_voiting = await message.answer(text=f"Проголосувати за {name_of_candidate}", reply_markup=keyboard)
+                
+
+    async def like_def(self, callback: CallbackQuery):
+        self.like += 1
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"👍 {self.like}", callback_data="like")],
+            [InlineKeyboardButton(text=f"👎 {self.dislike}", callback_data="dislike")]
+        ])
+
+        self.message_about_voiting.edit_text(text=self.message_list_of_candidates.text, reply_markup=keyboard)
+
+
+    async def dislike_def(self, callback: CallbackQuery):
+        self.dislike += 1
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"👍 {self.like}", callback_data="like")],
+            [InlineKeyboardButton(text=f"👎 {self.dislike}", callback_data="dislike")]
+        ])
+
+        self.message_about_voiting.edit_text(text=self.message_list_of_candidates.text, reply_markup=keyboard)
+
 
 
     async def startGame(self, message: Message, bot: Bot):
@@ -357,7 +426,7 @@ class PlayCommand:
         return handler
         
 
-    async def start_cmd(self, message: Message, bot: Bot):
+    async def play_cmd(self, message: Message, bot: Bot):
         if message.chat.type in ["supergroup", "group"]:
             link = await create_start_link(bot, f'{message.chat.id}', encode=False)
 
@@ -370,7 +439,7 @@ class PlayCommand:
 
             while True:
                 await asyncio.sleep(1)
-                self.gameTime += 10
+                self.gameTime += 2
                 if self.gameTime == 120:
                     if len(self.membersList) < self.numbers_of_members:
                         await message.answer(text="<b>Таймер зупиняється! Гра закінчена</b>", parse_mode="html")
