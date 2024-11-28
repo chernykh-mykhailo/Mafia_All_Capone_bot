@@ -8,46 +8,36 @@ from game.handlers import router as game_router
 from commands.start import router_start
 from commands.buy import router_pay
 from commands.construct_event import router_construct_event
+from database.database import *
+from config_bot import TOKEN
 
-# Get token from environment variable
-TOKEN = os.getenv('BOT_TOKEN')
-if not TOKEN:
-    raise ValueError("No BOT_TOKEN environment variable set")
 
-async def main():
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
+class TelegramBot:
+    def __init__(self):
+        self.bot = Bot(token=TOKEN)
+        self.dp = Dispatcher()
+        self.play_command = PlayCommand()
+
+        self.dp.include_routers(self.play_command.router_play, router_start, router_construct_event,router_pay )
+        self.command_list = [
+            BotCommand(command="start", description="Запуск бота 🤖"),
+            BotCommand(command="help", description="Допомога 🆘"),
+            BotCommand(command="play", description="Почати гру 🎮"),
+            BotCommand(command="buy", description="Купити Підписку"),
+            BotCommand(command="leave_game", description="Покинути гру"),
+            BotCommand(command="construct_event", description="Конструктор івентів")
+        ]    
     
-    # Initialize bot and dispatcher
-    bot = Bot(token=TOKEN)
-    dp = Dispatcher()
-    
-    # Set up command list
-    commands = [
-        BotCommand(command="start", description="Запуск бота "),
-        BotCommand(command="help", description="Допомога "),
-        BotCommand(command="play", description="Почати гру "),
-        BotCommand(command="leave", description="Покинути гру "),
-        BotCommand(command="force_start", description="Примусово почати гру (мінімум 3 гравці) "),
-        BotCommand(command="rules", description="Показати правила гри "),
-        BotCommand(command="buy_subscription", description="Купити/Продовжити Підписку "),
-        BotCommand(command="stop_subscription", description="Призупинити підписку "),
-        BotCommand(command="construct_event", description="Конструктор івентів ")
-    ]
-    
-    await bot.set_my_commands(commands)
-    
-    # Register routers
-    dp.include_routers(
-        game_router,
-        router_start,
-        router_pay,
-        router_construct_event
-    )
-    
-    # Start polling
+    async def run(self):
+        await self.bot.set_my_commands(self.command_list)
+        await self.dp.start_polling(self.bot)
+
+
+if __name__ == "__main__":
+    basicConfig(level=INFO)
+    bot = TelegramBot()
     try:
-        await dp.start_polling(bot)
+        asyncio.run(bot.run())
     except KeyboardInterrupt:
         logging.info("Bot stopped!")
 

@@ -66,4 +66,4 @@ create_tables()
 #     new_column_data_type = 'VARCHAR'
 #     i += 1
 
-#cursor.execute(f"ALTER TABLE users ADD COLUMN voites INTEGER DEFAULT 0")
+    #     cursor.execute(f"ALTER TABLE admin_panel ADD COLUMN {new_column_name}_{i} {new_column_data_type} DEFAULT '{text}'")
